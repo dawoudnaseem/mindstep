@@ -31,8 +31,7 @@ service cloud.firestore {
     match /users/{userId} {
       allow read: if isSignedIn() && (
         isOwner(userId) ||
-        (isTherapist() &&
-          get(/databases/$(database)/documents/users/$(userId)).data.therapistId == request.auth.uid)
+        (isTherapist() && resource.data.therapistId == request.auth.uid)
       );
       allow write: if isSignedIn() && isOwner(userId);
     }

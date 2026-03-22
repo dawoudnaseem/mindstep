@@ -72,6 +72,8 @@ export default function PatientLayout() {
       />
       {/* Navigated to via router.push, not shown as tabs */}
       <Tabs.Screen name="task/[id]" options={{ href: null }} />
+      <Tabs.Screen name="launch" options={{ href: null }} />
+      <Tabs.Screen name="completion" options={{ href: null }} />
     </Tabs>
   );
 }
