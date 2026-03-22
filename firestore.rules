@@ -24,6 +24,11 @@ service cloud.firestore {
       return getUserRole() == 'admin';
     }
 
+    function isTherapistOfPatient(patientId) {
+      return isTherapist() &&
+        get(/databases/$(database)/documents/users/$(patientId)).data.therapistId == request.auth.uid;
+    }
+
     // ── users ─────────────────────────────────────────────────────────────────
     // Each user can read/write their own document.
     // Therapists can also read documents belonging to their linked patients.
@@ -79,6 +84,7 @@ service cloud.firestore {
       allow read: if isSignedIn() && (
         isOwner(resource.data.patientId) ||
         isOwner(resource.data.therapistId) ||
+        isTherapistOfPatient(resource.data.patientId) ||
         isAdmin()
       );
       allow create: if isSignedIn() && isOwner(request.resource.data.patientId);

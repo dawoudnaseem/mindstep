@@ -4,7 +4,6 @@ import {
   getDocs,
   query,
   where,
-  orderBy,
   limit,
   serverTimestamp,
 } from 'firebase/firestore';
@@ -28,10 +27,22 @@ export async function getAttemptsByPatient(
   const constraints = [
     where('patientId', '==', patientId),
     ...(exerciseId ? [where('exerciseId', '==', exerciseId)] : []),
-    orderBy('completedAt', 'desc'),
     limit(50),
   ];
   const q = query(collection(db, 'exercise_attempts'), ...constraints);
   const snap = await getDocs(q);
-  return snap.docs.map((d) => ({ id: d.id, ...d.data() } as ExerciseAttempt));
+  const attempts = snap.docs.map((d) => ({ id: d.id, ...d.data() } as ExerciseAttempt));
+
+  // Sort by completedAt descending client-side (avoids requiring a composite index)
+  return attempts.sort((a, b) => {
+    const ta =
+      typeof (a.completedAt as any)?.toMillis === 'function'
+        ? (a.completedAt as any).toMillis()
+        : 0;
+    const tb =
+      typeof (b.completedAt as any)?.toMillis === 'function'
+        ? (b.completedAt as any).toMillis()
+        : 0;
+    return tb - ta;
+  });
 }

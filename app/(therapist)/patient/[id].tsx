@@ -16,11 +16,13 @@ import {
   getAssignmentsByTherapistAndPatient,
   deleteAssignment,
 } from '@/src/services/repositories/assignmentRepository';
+import { getAttemptsByPatient } from '@/src/services/repositories/attemptRepository';
+import { computeStats, PatientStats } from '@/src/services/repositories/statsRepository';
 import { useAuth } from '@/src/features/auth/AuthContext';
 import { colors } from '@/src/theme/colors';
 import { typography } from '@/src/theme/typography';
 import { spacing, radius } from '@/src/theme/spacing';
-import { AppUser, PatientAssignment } from '@/src/types';
+import { AppUser, ExerciseAttempt, PatientAssignment } from '@/src/types';
 import { Timestamp } from 'firebase/firestore';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -77,12 +79,21 @@ function InfoRow({ label, value }: { label: string; value: string }) {
   );
 }
 
+function formatDuration(seconds: number): string {
+  if (!seconds) return '—';
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return m > 0 ? `${m}m ${s}s` : `${s}s`;
+}
+
 function AssignmentCard({
   assignment,
+  stats,
   onEdit,
   onUnassign,
 }: {
   assignment: PatientAssignment;
+  stats?: PatientStats;
   onEdit: () => void;
   onUnassign: () => void;
 }) {
@@ -146,6 +157,36 @@ function AssignmentCard({
         )}
       </View>
 
+      {stats && stats.totalAttempts > 0 && (
+        <View style={styles.statsBar}>
+          <View style={styles.statsBarItem}>
+            <Text style={styles.statsBarValue}>{stats.successRate}%</Text>
+            <Text style={styles.statsBarLabel}>Success</Text>
+          </View>
+          <View style={styles.statsBarDivider} />
+          <View style={styles.statsBarItem}>
+            <Text style={styles.statsBarValue}>{formatDuration(stats.averageDuration)}</Text>
+            <Text style={styles.statsBarLabel}>Avg. Duration</Text>
+          </View>
+          {stats.totalAttempts > 1 && (
+            <>
+              <View style={styles.statsBarDivider} />
+              <View style={styles.statsBarItem}>
+                <Text
+                  style={[
+                    styles.statsBarValue,
+                    { color: stats.improvement >= 0 ? colors.success : colors.warning },
+                  ]}
+                >
+                  {stats.improvement >= 0 ? '+' : ''}{stats.improvement}
+                </Text>
+                <Text style={styles.statsBarLabel}>Trend</Text>
+              </View>
+            </>
+          )}
+        </View>
+      )}
+
       {assignment.instructions ? (
         <View style={styles.instructionsBox}>
           <Text style={styles.instructionsLabel}>Instructions</Text>
@@ -166,18 +207,34 @@ export default function PatientDetailScreen() {
   const router = useRouter();
   const [patient, setPatient] = useState<AppUser | null>(null);
   const [assignments, setAssignments] = useState<PatientAssignment[]>([]);
+  const [statsMap, setStatsMap] = useState<Record<string, PatientStats>>({});
   const [loading, setLoading] = useState(true);
 
   const fetchData = useCallback(async () => {
     if (!id || !appUser?.id) return;
     setLoading(true);
     try {
-      const [p, a] = await Promise.all([
+      const [p, a, allAttempts] = await Promise.all([
         getUserById(id),
         getAssignmentsByTherapistAndPatient(appUser.id, id),
+        getAttemptsByPatient(id),
       ]);
       setPatient(p);
       setAssignments(a);
+
+      // Compute stats per exerciseId for the stats cards
+      const byExercise = new Map<string, ExerciseAttempt[]>();
+      allAttempts.forEach((attempt) => {
+        if (!byExercise.has(attempt.exerciseId)) {
+          byExercise.set(attempt.exerciseId, []);
+        }
+        byExercise.get(attempt.exerciseId)!.push(attempt);
+      });
+      const map: Record<string, PatientStats> = {};
+      byExercise.forEach((exAttempts, exerciseId) => {
+        map[exerciseId] = computeStats(exAttempts);
+      });
+      setStatsMap(map);
     } finally {
       setLoading(false);
     }
@@ -296,6 +353,7 @@ export default function PatientDetailScreen() {
             <AssignmentCard
               key={a.id}
               assignment={a}
+              stats={statsMap[a.exerciseId]}
               onEdit={() =>
                 router.push({
                   pathname: '/(therapist)/assign/[patientId]',
@@ -571,6 +629,33 @@ const styles = StyleSheet.create({
   emptyAssignmentsText: {
     fontSize: 14,
     color: colors.textSecondary,
+  },
+  statsBar: {
+    flexDirection: 'row',
+    backgroundColor: colors.background,
+    borderRadius: radius.sm,
+    padding: spacing.sm,
+    marginTop: spacing.sm,
+    marginBottom: spacing.xs,
+  },
+  statsBarItem: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  statsBarValue: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: colors.primary,
+  },
+  statsBarLabel: {
+    fontSize: 11,
+    color: colors.textSecondary,
+    marginTop: 1,
+  },
+  statsBarDivider: {
+    width: 1,
+    backgroundColor: colors.border,
+    marginVertical: 2,
   },
   assignButton: {
     backgroundColor: colors.primary,
