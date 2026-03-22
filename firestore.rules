@@ -1,0 +1,101 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── Helpers ──────────────────────────────────────────────────────────────
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return request.auth.uid == userId;
+    }
+
+    function getUserRole() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
+    }
+
+    function isTherapist() {
+      return getUserRole() == 'therapist';
+    }
+
+    function isAdmin() {
+      return getUserRole() == 'admin';
+    }
+
+    function isTherapistOfPatient(patientId) {
+      return isTherapist() &&
+        get(/databases/$(database)/documents/users/$(patientId)).data.therapistId == request.auth.uid;
+    }
+
+    // ── users ─────────────────────────────────────────────────────────────────
+    // Each user can read/write their own document.
+    // Therapists can also read documents belonging to their linked patients.
+
+    match /users/{userId} {
+      allow read: if isSignedIn() && (
+        isOwner(userId) ||
+        (isTherapist() && resource.data.therapistId == request.auth.uid)
+      );
+      allow write: if isSignedIn() && isOwner(userId);
+    }
+
+    // ── exercises ─────────────────────────────────────────────────────────────
+    // Any authenticated user can read. Only admins may write (content is seeded).
+
+    match /exercises/{exerciseId} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && isAdmin();
+    }
+
+    // ── exercise_steps ────────────────────────────────────────────────────────
+
+    match /exercise_steps/{stepId} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && isAdmin();
+    }
+
+    // ── patient_assignments ───────────────────────────────────────────────────
+    // Patients read their own assignments.
+    // Therapists read assignments where they are the therapistId.
+    // Therapists and admins write (create/update) assignments.
+
+    match /patient_assignments/{assignmentId} {
+      allow read: if isSignedIn() && (
+        isOwner(resource.data.patientId) ||
+        isOwner(resource.data.therapistId) ||
+        isAdmin()
+      );
+      allow create: if isSignedIn() && (isTherapist() || isAdmin());
+      allow update: if isSignedIn() && (
+        isOwner(resource.data.therapistId) ||
+        isOwner(resource.data.patientId) ||   // patient updates attemptCount
+        isAdmin()
+      );
+      allow delete: if isSignedIn() && (isOwner(resource.data.therapistId) || isAdmin());
+    }
+
+    // ── exercise_attempts ─────────────────────────────────────────────────────
+    // Patients read/write their own attempts.
+    // Therapists can read attempts for their linked patients.
+
+    match /exercise_attempts/{attemptId} {
+      allow read: if isSignedIn() && (
+        isOwner(resource.data.patientId) ||
+        isOwner(resource.data.therapistId) ||
+        isTherapistOfPatient(resource.data.patientId) ||
+        isAdmin()
+      );
+      allow create: if isSignedIn() && isOwner(request.resource.data.patientId);
+      allow update: if false; // attempts are immutable after creation
+      allow delete: if false;
+    }
+
+    // ── error_logs ────────────────────────────────────────────────────────────
+
+    match /error_logs/{logId} {
+      allow read, write: if isSignedIn() && isOwner(resource.data.patientId);
+    }
+  }
+}
