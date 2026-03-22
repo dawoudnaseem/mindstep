@@ -1,12 +1,22 @@
+import { useEffect, useState } from 'react';
 import { Redirect } from 'expo-router';
-import { useAuth } from '@/src/features/auth/AuthContext';
 import { View, ActivityIndicator, StyleSheet } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useAuth } from '@/src/features/auth/AuthContext';
 import { colors } from '@/src/theme/colors';
 
 export default function Index() {
-  const { user, role, loading } = useAuth();
+  const { user, role, loading: authLoading } = useAuth();
+  const [onboardingDone, setOnboardingDone] = useState<boolean | null>(null);
 
-  if (loading) {
+  useEffect(() => {
+    AsyncStorage.getItem('onboarding_completed').then((val) => {
+      setOnboardingDone(val === 'true');
+    });
+  }, []);
+
+  // Wait for both auth state and AsyncStorage to resolve
+  if (authLoading || onboardingDone === null) {
     return (
       <View style={styles.center}>
         <ActivityIndicator size="large" color={colors.primary} />
@@ -14,19 +24,23 @@ export default function Index() {
     );
   }
 
+  // Not logged in
   if (!user) {
-    return <Redirect href="/(auth)/onboarding" />;
+    if (!onboardingDone) {
+      return <Redirect href="/(auth)/onboarding" />;
+    }
+    return <Redirect href="/(auth)/login" />;
   }
 
+  // Logged in — route by role
   if (role === 'therapist') {
-    return <Redirect href="/(therapist)/" />;
+    return <Redirect href="/(therapist)" />;
   }
-
   if (role === 'patient') {
-    return <Redirect href="/(patient)/" />;
+    return <Redirect href="/(patient)" />;
   }
 
-  // Fallback: unknown role, go to login
+  // Role unknown or missing — back to login
   return <Redirect href="/(auth)/login" />;
 }
 

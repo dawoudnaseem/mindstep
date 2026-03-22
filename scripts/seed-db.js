@@ -161,8 +161,8 @@ const exercises = [
 //    patient@carexr.demo    /  Demo1234!
 // 2. Copy the UID shown and paste below.
 
-const THERAPIST_UID = 'REPLACE_WITH_THERAPIST_UID';
-const PATIENT_UID = 'REPLACE_WITH_PATIENT_UID';
+const THERAPIST_UID = '805mCrhsZSVwChZKvTNRHfUaBd33';
+const PATIENT_UID = 'BOQsxDobche3U3ETopussSygoFm2';
 
 const demoUsers = [
   {

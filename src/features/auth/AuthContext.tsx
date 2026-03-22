@@ -16,7 +16,7 @@ interface AuthContextValue {
   appUser: AppUser | null;
   role: UserRole | null;
   loading: boolean;
-  login: (email: string, password: string) => Promise<void>;
+  login: (email: string, password: string) => Promise<UserRole | null>;
   logout: () => Promise<void>;
 }
 
@@ -33,6 +33,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
+        // Keep loading=true until fetchAppUser resolves so index.tsx never
+        // sees user=set / role=null / loading=false (which would redirect to login).
+        setLoading(true);
         setUser(firebaseUser);
         await fetchAppUser(firebaseUser.uid);
       } else {
@@ -46,27 +49,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return unsubscribe;
   }, []);
 
-  async function fetchAppUser(uid: string) {
-    try {
-      const userDoc = await getDoc(doc(db, 'users', uid));
-      if (userDoc.exists()) {
-        const data = userDoc.data() as AppUser;
-        setAppUser(data);
-        setRole(data.role);
-      } else {
-        setAppUser(null);
-        setRole(null);
-      }
-    } catch (error) {
-      console.error('Failed to fetch user profile:', error);
-      setAppUser(null);
-      setRole(null);
+  async function fetchAppUser(uid: string): Promise<UserRole | null> {
+    const userDoc = await getDoc(doc(db, 'users', uid));
+    if (userDoc.exists()) {
+      const data = userDoc.data() as AppUser;
+      setAppUser(data);
+      setRole(data.role);
+      return data.role;
     }
+    setAppUser(null);
+    setRole(null);
+    return null;
   }
 
-  async function login(email: string, password: string) {
-    await signInWithEmailAndPassword(auth, email, password);
-    // onAuthStateChanged will fire and call fetchAppUser automatically
+  async function login(email: string, password: string): Promise<UserRole | null> {
+    const credential = await signInWithEmailAndPassword(auth, email, password);
+    // Fetch the profile immediately so the caller gets the role back
+    // and can navigate directly — avoids racing against onAuthStateChanged.
+    return fetchAppUser(credential.user.uid);
   }
 
   async function logout() {
